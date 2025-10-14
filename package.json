@@ -1,0 +1,50 @@
+{
+  "name": "@framky/translation-manager-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for managing translations with review workflow, automatic non-breaking spaces, and file watching",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "translation-manager-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test-naming-conventions.js"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "translation",
+    "i18n",
+    "localization",
+    "l10n",
+    "translation-management",
+    "non-breaking-spaces",
+    "file-watcher"
+  ],
+  "author": "Framky",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/framky/translation-manager-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/framky/translation-manager-mcp/issues"
+  },
+  "homepage": "https://github.com/framky/translation-manager-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "csv-parse": "^5.5.0",
+    "csv-stringify": "^6.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "index.js",
+    "src/",
+    "test-naming-conventions.js",
+    "README.md",
+    "LICENSE"
+  ]
+}

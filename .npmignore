@@ -1,0 +1,42 @@
+# Test files
+test/
+*.test.js
+*.spec.js
+
+# Development files
+.eslintrc.js
+.prettierrc
+.editorconfig
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Documentation (keep README.md)
+docs/
+CONTRIBUTING.md
+CHANGELOG.md
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Translation state
+.translation-state.json
+
+# Test data
+test-messages/
