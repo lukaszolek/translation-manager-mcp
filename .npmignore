@@ -22,10 +22,9 @@ test/
 .gitlab-ci.yml
 .travis.yml
 
-# Documentation (keep README.md)
+# Documentation (keep README.md, CHANGELOG.md, TESTING.md)
 docs/
 CONTRIBUTING.md
-CHANGELOG.md
 
 # Logs
 *.log

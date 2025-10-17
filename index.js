@@ -177,28 +177,19 @@ export class TranslationManager {
   
   async saveTranslationsToJsonForLocales(localesToSave) {
     try {
-      // Create backup directory if it doesn't exist
-      const backupDir = path.join(this.messagesDir, 'backup');
-      try {
-        await fs.mkdir(backupDir, { recursive: true });
-      } catch {
-        // Directory might already exist
-      }
-
       // Save each specified locale file
       for (const locale of localesToSave) {
         if (!this.locales.includes(locale)) {
           continue;
         }
-        
+
         const filename = `${locale}.json`;
         const filepath = path.join(this.messagesDir, filename);
-        const backupPath = path.join(backupDir, `${locale}.${Date.now()}.json.bak`);
-        
+
         // Create flattened data for this locale
         const flatData = [];
         const language = getLanguageFromLocale(locale);
-        
+
         for (const [key, data] of this.translations.entries()) {
           if (data.translations[locale] !== undefined) {
             // Apply non-breaking spaces before saving
@@ -206,27 +197,20 @@ export class TranslationManager {
             flatData.push([key, processedTranslation]);
           }
         }
-        
+
         // Unflatten to nested structure
         const nestedData = this.unflattenJson(flatData);
-        
-        // Backup existing file if it exists
-        try {
-          await fs.copyFile(filepath, backupPath);
-        } catch {
-          // File might not exist yet
-        }
-        
+
         // Write the new content
         const jsonContent = JSON.stringify(nestedData, null, 4);
         await fs.writeFile(filepath, jsonContent, 'utf8');
       }
-      
+
       console.error(`Saved translations to ${localesToSave.length} JSON files`);
-      
+
       // Also save the checked status
       await this.saveCheckedStatus();
-      
+
       return {
         success: true,
         savedLocales: [...localesToSave, 'translation-check'],
@@ -299,85 +283,67 @@ export class TranslationManager {
   }
 
   async updateTranslations(updates) {
-    const results = {};
-    
+    let updatedCount = 0;
+    const modifiedLocales = new Set();
+
     // updates is an object: { key: { locale: translation } }
     for (const [key, localeTranslations] of Object.entries(updates)) {
       if (!this.translations.has(key)) {
-        results[key] = { error: `Key "${key}" not found` };
         continue;
       }
-      
-      results[key] = {};
+
       const entry = this.translations.get(key);
-      
+
       for (const [locale, translation] of Object.entries(localeTranslations)) {
         if (!this.locales.includes(locale)) {
-          results[key][locale] = { error: `Locale "${locale}" not found` };
           continue;
         }
-        
+
         // Get the language code from locale (e.g., 'pl' from 'pl-pl')
         const language = getLanguageFromLocale(locale);
-        
+
         // Apply non-breaking spaces if rules exist for this language
         const processedTranslation = insertNonBreakingSpaces(translation, language);
-        
+
         entry.translations[locale] = processedTranslation;
-        
-        results[key][locale] = {
-          success: true,
-          translation: processedTranslation,
-          originalTranslation: translation,
-          nonBreakingSpacesApplied: translation !== processedTranslation
-        };
+        modifiedLocales.add(locale);
+        updatedCount++;
       }
     }
-    
+
     // Auto-save only the modified locales to disk
-    const modifiedLocales = new Set();
-    for (const [key, localeTranslations] of Object.entries(updates)) {
-      if (results[key] && !results[key].error) {
-        for (const locale of Object.keys(localeTranslations)) {
-          if (results[key][locale] && results[key][locale].success) {
-            modifiedLocales.add(locale);
-          }
-        }
-      }
-    }
-    
     if (modifiedLocales.size > 0) {
       try {
         await this.saveTranslationsToJsonForLocales(Array.from(modifiedLocales));
         console.error(`Auto-saved translations for locales: ${Array.from(modifiedLocales).join(', ')}`);
       } catch (error) {
         console.error(`Error auto-saving translations:`, error);
+        return { success: false, error: error.message };
       }
     }
-    
-    return results;
+
+    return { success: true, updatedKeys: updatedCount };
   }
 
   async markChecked(keys) {
     // Handle both single key (string) and multiple keys (array)
     const keyList = Array.isArray(keys) ? keys : [keys];
-    const results = [];
-    
+    let markedCount = 0;
+
     for (const key of keyList) {
       if (!this.translations.has(key)) {
-        results.push({ error: `Key "${key}" not found`, key });
         continue;
       }
-      
+
       const entry = this.translations.get(key);
       entry.isChecked = true;
-      results.push({ success: true, key });
+      markedCount++;
     }
-    
+
     // Auto-save the checked status
     await this.saveCheckedStatus();
-    
-    return results;
+
+    return { success: true, markedCount };
   }
 
   getCheckedKeys() {
@@ -392,47 +358,80 @@ export class TranslationManager {
     return checkedKeys;
   }
 
-  getMissingTranslationKeys() {
-    const missingKeys = [];
-    
+  getMissingTranslationKeys(page = 1, pageSize = 50) {
+    const allMissingKeys = [];
+
     for (const [key, data] of this.translations.entries()) {
       const missingLocales = [];
-      
+
       for (const locale of this.locales) {
         if (!data.translations[locale] || data.translations[locale] === '') {
           missingLocales.push(locale);
         }
       }
-      
+
       if (missingLocales.length > 0) {
-        missingKeys.push({
+        allMissingKeys.push({
           key,
           missingLocales,
           existingTranslations: data.translations
         });
       }
     }
-    
-    return missingKeys;
+
+    // Calculate pagination
+    const totalCount = allMissingKeys.length;
+    const totalPages = Math.ceil(totalCount / pageSize);
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedKeys = allMissingKeys.slice(startIndex, endIndex);
+
+    return {
+      count: totalCount,
+      totalPages,
+      currentPage: page,
+      pageSize,
+      keys: paginatedKeys
+    };
   }
 
   // Get translations by key prefix
-  getTranslationByKeyPrefix(keyPrefix) {
-    const result = {};
-    
+  getTranslationByKeyPrefix(keyPrefix, page = 1, pageSize = 50) {
+    const allResults = [];
+
     for (const [key, data] of this.translations.entries()) {
       if (key.startsWith(keyPrefix)) {
-        result[key] = data.translations;
+        allResults.push({ key, translations: data.translations });
       }
     }
-    
-    return result;
+
+    // Calculate pagination
+    const totalCount = allResults.length;
+    const totalPages = Math.ceil(totalCount / pageSize);
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedResults = allResults.slice(startIndex, endIndex);
+
+    // Convert back to object format
+    const keys = {};
+    for (const item of paginatedResults) {
+      keys[item.key] = item.translations;
+    }
+
+    return {
+      count: totalCount,
+      totalPages,
+      currentPage: page,
+      pageSize,
+      keys
+    };
   }
   
   // Add new translations
-  addTranslations(newTranslations) {
-    const results = {};
-    
+  async addTranslations(newTranslations) {
+    let addedKeys = 0;
+    const addedLocales = new Set();
+
     // newTranslations is an object: { key: { locale: translation } }
     for (const [key, localeTranslations] of Object.entries(newTranslations)) {
       // Create new entry if key doesn't exist
@@ -441,36 +440,45 @@ export class TranslationManager {
           isChecked: false,
           translations: {}
         });
+        addedKeys++;
       }
-      
-      results[key] = {};
+
       const entry = this.translations.get(key);
-      
+
       for (const [locale, translation] of Object.entries(localeTranslations)) {
         // Add locale if it doesn't exist
         if (!this.locales.includes(locale)) {
           this.locales.push(locale);
           this.locales.sort();
         }
-        
+
         // Get the language code from locale (e.g., 'pl' from 'pl-pl')
         const language = getLanguageFromLocale(locale);
-        
+
         // Apply non-breaking spaces if rules exist for this language
         const processedTranslation = insertNonBreakingSpaces(translation, language);
-        
+
         entry.translations[locale] = processedTranslation;
-        
-        results[key][locale] = {
-          success: true,
-          translation: processedTranslation,
-          originalTranslation: translation,
-          nonBreakingSpacesApplied: translation !== processedTranslation
-        };
+        addedLocales.add(locale);
       }
     }
-    
-    return results;
+
+    // Auto-save to JSON files
+    if (addedLocales.size > 0) {
+      try {
+        await this.saveTranslationsToJson();
+        console.error(`Auto-saved translations for locales: ${Array.from(addedLocales).join(', ')}`);
+      } catch (error) {
+        console.error(`Error auto-saving translations:`, error);
+        return { success: false, error: error.message };
+      }
+    }
+
+    return {
+      success: true,
+      addedKeys,
+      addedLocales: Array.from(addedLocales)
+    };
   }
 
   async loadPreviousState() {
@@ -561,36 +569,59 @@ export class TranslationManager {
   }
 
   // Delete all keys with a given prefix
-  async deleteKeysByPrefix(prefix) {
+  async deleteKeysByPrefix(prefix, locales = null) {
     if (!prefix) {
       throw new Error('Prefix is required');
     }
-    
-    const keysToDelete = [];
-    
-    // Find all keys with the given prefix
-    for (const key of this.translations.keys()) {
-      if (key.startsWith(prefix)) {
-        keysToDelete.push(key);
+
+    let deletedCount = 0;
+    const affectedLocales = new Set();
+
+    if (locales && locales.length > 0) {
+      // Delete keys only from specified locales
+      for (const [key, data] of this.translations.entries()) {
+        if (key.startsWith(prefix)) {
+          for (const locale of locales) {
+            if (data.translations[locale]) {
+              delete data.translations[locale];
+              affectedLocales.add(locale);
+              deletedCount++;
+            }
+          }
+          // If all translations are gone, remove the key entirely
+          if (Object.keys(data.translations).length === 0) {
+            this.translations.delete(key);
+          }
+        }
       }
+    } else {
+      // Delete entire keys
+      const keysToDelete = [];
+      for (const key of this.translations.keys()) {
+        if (key.startsWith(prefix)) {
+          keysToDelete.push(key);
+        }
+      }
+
+      for (const key of keysToDelete) {
+        this.translations.delete(key);
+      }
+      deletedCount = keysToDelete.length;
     }
-    
-    // Delete the keys from translations
-    for (const key of keysToDelete) {
-      this.translations.delete(key);
-    }
-    
+
     // Automatically save to JSON files after deletion
-    if (keysToDelete.length > 0) {
-      await this.saveTranslationsToJson();
+    if (deletedCount > 0) {
+      if (affectedLocales.size > 0) {
+        await this.saveTranslationsToJsonForLocales(Array.from(affectedLocales));
+      } else {
+        await this.saveTranslationsToJson();
+      }
       await this.saveCheckedStatus();
     }
-    
+
     return {
       success: true,
-      deletedKeys: keysToDelete,
-      deletedCount: keysToDelete.length,
-      remainingKeysCount: this.translations.size
+      deletedCount
     };
   }
   
@@ -721,45 +752,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'get_missing_translation_keys',
-        description: 'Get list of keys missing translations in one or more locales',
+        description: 'Get list of keys missing translations in one or more locales with pagination',
         inputSchema: {
           type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'load_from_json',
-        description: 'Reload translations from JSON files in the messages directory',
-        inputSchema: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'save_to_json',
-        description: 'Save current translations back to JSON files in the messages directory',
-        inputSchema: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'apply_non_breaking_spaces',
-        description: 'Apply non-breaking spaces to all translations based on language rules',
-        inputSchema: {
-          type: 'object',
-          properties: {}
+          properties: {
+            page: {
+              type: 'number',
+              description: 'Page number (default: 1)',
+              default: 1
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of items per page (default: 50)',
+              default: 50
+            }
+          }
         }
       },
       {
         name: 'get_translation_by_key_prefix',
-        description: 'Get translations for all keys starting with given prefix',
+        description: 'Get translations for all keys starting with given prefix with pagination',
         inputSchema: {
           type: 'object',
           properties: {
             keyPrefix: {
               type: 'string',
               description: 'Key prefix to search for'
+            },
+            page: {
+              type: 'number',
+              description: 'Page number (default: 1)',
+              default: 1
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of items per page (default: 50)',
+              default: 50
             }
           },
           required: ['keyPrefix']
@@ -795,13 +823,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'delete_keys_by_prefix',
-        description: 'Delete all translation keys with a given prefix and automatically save changes',
+        description: 'Delete translation keys with a given prefix. Can delete from all locales or specific locales only.',
         inputSchema: {
           type: 'object',
           properties: {
             prefix: {
               type: 'string',
               description: 'The prefix of keys to delete (e.g., "GalleryWalls.aboutFramky")'
+            },
+            locales: {
+              type: 'array',
+              description: 'Optional: array of locale codes to delete from (e.g., ["pl-pl", "en-gb"]). If not provided, deletes entire keys from all locales.',
+              items: {
+                type: 'string'
+              }
             }
           },
           required: ['prefix']
@@ -865,66 +900,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
         
       case 'get_missing_translation_keys':
-        const missingKeys = translationManager.getMissingTranslationKeys();
+        const missingKeys = translationManager.getMissingTranslationKeys(
+          args.page || 1,
+          args.pageSize || 50
+        );
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                count: missingKeys.length,
-                keys: missingKeys
-              }, null, 2)
+              text: JSON.stringify(missingKeys, null, 2)
             }
           ]
         };
-        
-        
-      case 'load_from_json':
-        await translationManager.loadPreviousState();
-        await translationManager.loadTranslationsFromJson();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                success: true,
-                message: 'Translations reloaded from JSON files',
-                keyCount: translationManager.translations.size,
-                locales: translationManager.locales
-              }, null, 2)
-            }
-          ]
-        };
-        
-      case 'save_to_json':
-        const saveJsonResult = await translationManager.saveTranslationsToJson();
-        // Also save the checked status
-        await translationManager.saveCheckedStatus();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                ...saveJsonResult,
-                checkedStatusSaved: true
-              }, null, 2)
-            }
-          ]
-        };
-        
-      case 'apply_non_breaking_spaces':
-        const applyResult = translationManager.applyNonBreakingSpacesToAll();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(applyResult, null, 2)
-            }
-          ]
-        };
-        
+
       case 'get_translation_by_key_prefix':
-        const translationsByKey = translationManager.getTranslationByKeyPrefix(args.keyPrefix);
+        const translationsByKey = translationManager.getTranslationByKeyPrefix(
+          args.keyPrefix,
+          args.page || 1,
+          args.pageSize || 50
+        );
         return {
           content: [
             {
@@ -933,9 +927,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           ]
         };
-        
+
       case 'add_translations':
-        const addResult = translationManager.addTranslations(args.translations);
+        const addResult = await translationManager.addTranslations(args.translations);
         return {
           content: [
             {
@@ -957,7 +951,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
         
       case 'delete_keys_by_prefix':
-        const deleteResult = await translationManager.deleteKeysByPrefix(args.prefix);
+        const deleteResult = await translationManager.deleteKeysByPrefix(
+          args.prefix,
+          args.locales
+        );
         return {
           content: [
             {

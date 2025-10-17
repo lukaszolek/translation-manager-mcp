@@ -1,15 +1,16 @@
 {
-  "name": "@framky/translation-manager-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for managing translations with review workflow, automatic non-breaking spaces, and file watching",
+  "name": "@lukaszolek/translation-manager-mcp",
+  "version": "2.0.1",
+  "description": "MCP server for managing translations with review workflow, automatic non-breaking spaces, file watching, and efficient pagination",
   "main": "index.js",
   "type": "module",
   "bin": {
-    "translation-manager-mcp": "./index.js"
+    "translation-manager-mcp": "index.js"
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node test-naming-conventions.js"
+    "test": "node test-translation-manager.js",
+    "test:naming": "node test-naming-conventions.js"
   },
   "keywords": [
     "mcp",
@@ -26,12 +27,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/framky/translation-manager-mcp.git"
+    "url": "https://github.com/lukaszolek/translation-manager-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/framky/translation-manager-mcp/issues"
+    "url": "https://github.com/lukaszolek/translation-manager-mcp/issues"
   },
-  "homepage": "https://github.com/framky/translation-manager-mcp#readme",
+  "homepage": "https://github.com/lukaszolek/translation-manager-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "csv-parse": "^5.5.0",
@@ -44,7 +45,10 @@
     "index.js",
     "src/",
     "test-naming-conventions.js",
+    "test-translation-manager.js",
     "README.md",
+    "CHANGELOG.md",
+    "TESTING.md",
     "LICENSE"
   ]
 }

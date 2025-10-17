@@ -6,12 +6,14 @@ An MCP (Model Context Protocol) server for managing translations with review wor
 
 - 📝 **Translation Management**: Load, edit, and save translations from JSON files
 - ✅ **Review Workflow**: Track which translations have been checked/reviewed
-- 🔄 **Auto-Save**: Automatically saves changes when translations are updated
+- 🔄 **Auto-Save**: Automatically saves changes when translations are updated (no manual save needed)
 - 👁️ **File Watching**: Monitors translation files for external changes and auto-reloads
 - 🌍 **Non-Breaking Spaces**: Automatically applies language-specific non-breaking space rules
-- 🎯 **Missing Translation Detection**: Identifies keys missing translations in any locale
-- 🔍 **Prefix-Based Operations**: Search, filter, and delete translations by key prefix
+- 🎯 **Missing Translation Detection**: Identifies keys missing translations in any locale (with pagination)
+- 🔍 **Prefix-Based Operations**: Search, filter, and delete translations by key prefix (with pagination)
 - 📊 **Translation Status**: Get comprehensive status reports of translation completeness
+- 💾 **Efficient Responses**: Minimal token usage with concise API responses
+- 🌐 **Locale-Specific Deletion**: Delete keys from specific locales without affecting others
 
 ## Supported Languages for Non-Breaking Spaces
 
@@ -111,12 +113,11 @@ your-project/
 │   ├── en-us.json        (or en.json)
 │   ├── pl-pl.json        (or pl.json)
 │   ├── fr-fr.json        (or fr.json)
-│   ├── translation-check.json  (auto-generated)
-│   └── backup/                 (auto-generated)
-│       ├── en-us.1234567890.json.bak
-│       └── pl-pl.1234567890.json.bak
-└── .translation-state.json     (auto-generated)
+│   └── translation-check.json  (auto-generated)
+└── .translation-state.json     (auto-generated, at server root)
 ```
+
+**Note**: The server no longer creates backups. Use version control (e.g., Git) to track changes to your translation files.
 
 ### Supported File Naming Conventions
 
@@ -164,9 +165,19 @@ Get the next N unchecked translations for review.
 }
 ```
 
+**Returns:**
+```json
+{
+  "translation.key": {
+    "pl-pl": "Polish translation",
+    "en-us": "English translation"
+  }
+}
+```
+
 ### 2. `update_translations`
 
-Update translations for one or more keys and locales. Changes are auto-saved.
+Update translations for one or more keys and locales. Changes are automatically saved to JSON files.
 
 **Parameters:**
 - `updates` (object): Translation updates with structure `{ key: { locale: translation } }`
@@ -187,9 +198,17 @@ Update translations for one or more keys and locales. Changes are auto-saved.
 }
 ```
 
+**Returns:**
+```json
+{
+  "success": true,
+  "updatedKeys": 2
+}
+```
+
 ### 3. `mark_checked`
 
-Mark one or more translation keys as reviewed.
+Mark one or more translation keys as reviewed. Status is automatically saved.
 
 **Parameters:**
 - `keys` (string | array): Single key or array of keys to mark as checked
@@ -198,6 +217,14 @@ Mark one or more translation keys as reviewed.
 ```json
 {
   "keys": ["common.button.save", "common.button.cancel"]
+}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "markedCount": 2
 }
 ```
 
@@ -215,12 +242,27 @@ Get a list of all translation keys that have been marked as checked.
 
 ### 5. `get_missing_translation_keys`
 
-Get a list of keys that are missing translations in one or more locales.
+Get a paginated list of keys that are missing translations in one or more locales.
+
+**Parameters:**
+- `page` (number, default: 1): Page number
+- `pageSize` (number, default: 50): Number of items per page
+
+**Example:**
+```json
+{
+  "page": 1,
+  "pageSize": 20
+}
+```
 
 **Returns:**
 ```json
 {
-  "count": 3,
+  "count": 123,
+  "totalPages": 7,
+  "currentPage": 1,
+  "pageSize": 20,
   "keys": [
     {
       "key": "common.button.submit",
@@ -236,21 +278,45 @@ Get a list of keys that are missing translations in one or more locales.
 
 ### 6. `get_translation_by_key_prefix`
 
-Get all translations for keys starting with a specific prefix.
+Get all translations for keys starting with a specific prefix, with pagination support.
 
 **Parameters:**
-- `keyPrefix` (string): The prefix to search for
+- `keyPrefix` (string, required): The prefix to search for
+- `page` (number, default: 1): Page number
+- `pageSize` (number, default: 50): Number of items per page
 
 **Example:**
 ```json
 {
-  "keyPrefix": "common.button"
+  "keyPrefix": "common.button",
+  "page": 1,
+  "pageSize": 25
+}
+```
+
+**Returns:**
+```json
+{
+  "count": 45,
+  "totalPages": 2,
+  "currentPage": 1,
+  "pageSize": 25,
+  "keys": {
+    "common.button.save": {
+      "en-us": "Save",
+      "pl-pl": "Zapisz"
+    },
+    "common.button.cancel": {
+      "en-us": "Cancel",
+      "pl-pl": "Anuluj"
+    }
+  }
 }
 ```
 
 ### 7. `add_translations`
 
-Add new translation keys with their translations.
+Add new translation keys with their translations. Changes are automatically saved to JSON files.
 
 **Parameters:**
 - `translations` (object): New translations with structure `{ key: { locale: translation } }`
@@ -268,62 +334,47 @@ Add new translation keys with their translations.
 }
 ```
 
+**Returns:**
+```json
+{
+  "success": true,
+  "addedKeys": 1,
+  "addedLocales": ["en-us", "pl-pl", "fr-fr"]
+}
+```
+
 ### 8. `delete_keys_by_prefix`
 
-Delete all translation keys with a given prefix. Changes are auto-saved.
+Delete translation keys with a given prefix. Can delete from all locales or specific locales only. Changes are automatically saved.
 
 **Parameters:**
-- `prefix` (string): The prefix of keys to delete
+- `prefix` (string, required): The prefix of keys to delete
+- `locales` (array, optional): Array of locale codes to delete from (e.g., `["pl-pl", "en-gb"]`). If not provided, deletes entire keys from all locales.
 
-**Example:**
+**Example 1 - Delete from all locales:**
 ```json
 {
   "prefix": "old.deprecated"
 }
 ```
 
-### 9. `load_from_json`
-
-Manually reload all translations from JSON files.
+**Example 2 - Delete only from specific locales:**
+```json
+{
+  "prefix": "HomePage.hero",
+  "locales": ["pl-pl", "de-de"]
+}
+```
 
 **Returns:**
 ```json
 {
   "success": true,
-  "message": "Translations reloaded from JSON files",
-  "keyCount": 150,
-  "locales": ["en-us", "pl-pl", "fr-fr"]
+  "deletedCount": 12
 }
 ```
 
-### 10. `save_to_json`
-
-Manually save all translations to JSON files.
-
-**Returns:**
-```json
-{
-  "success": true,
-  "savedLocales": ["en-us", "pl-pl", "translation-check"],
-  "keyCount": 150
-}
-```
-
-### 11. `apply_non_breaking_spaces`
-
-Apply non-breaking space rules to all existing translations based on their language.
-
-**Returns:**
-```json
-{
-  "success": true,
-  "totalKeys": 150,
-  "totalLocales": 3,
-  "updatedTranslations": 45
-}
-```
-
-### 12. `get_translation_status`
+### 9. `get_translation_status`
 
 Get a summary of translation status across all locales.
 
@@ -338,7 +389,7 @@ Get a summary of translation status across all locales.
 
 ## Non-Breaking Spaces
 
-The server automatically applies language-specific non-breaking space rules when saving translations. This includes:
+The server automatically applies language-specific non-breaking space rules when saving translations. This process is transparent and happens automatically - you don't need to call any special function.
 
 ### Polish, Czech, Slovak
 - After single-letter words (a, i, o, u, w, z)
@@ -355,7 +406,18 @@ The server automatically applies language-specific non-breaking space rules when
 - Custom rules for German, Hungarian, Spanish, Italian, and Dutch
 - Between numbers and their units (all supported languages)
 
-## File Watching
+## Automatic Features
+
+### Auto-Save
+The following operations automatically save changes to JSON files:
+- `update_translations` - saves only modified locales
+- `add_translations` - saves all affected locales
+- `delete_keys_by_prefix` - saves all affected files
+- `mark_checked` - saves the checked status
+
+You don't need to manually call save - it happens automatically after each modification.
+
+### File Watching
 
 The server automatically watches the `messages/` directory for changes to translation files. When changes are detected:
 
@@ -364,13 +426,7 @@ The server automatically watches the `messages/` directory for changes to transl
 3. Translations are reloaded from disk
 4. New/modified translations are marked as unchecked
 
-## Backup System
-
-Every time translations are saved, the server:
-
-1. Creates a timestamped backup in `messages/backup/`
-2. Saves the new content
-3. Keeps backups indefinitely (manual cleanup recommended)
+This allows you to edit translation files externally (e.g., in your IDE) and have them automatically reflected in the MCP server.
 
 ## Development
 
@@ -381,6 +437,24 @@ npm start
 ```
 
 ### Testing
+
+Run the comprehensive test suite:
+
+```bash
+npm test
+```
+
+The test suite includes 41 automated tests covering:
+- All API response formats
+- Pagination functionality
+- Auto-save behavior
+- Locale-specific deletion
+- Non-breaking space application
+- No backup file creation
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
+
+### Manual Testing
 
 The server communicates via stdio using the MCP protocol. You can test it with Claude Desktop or any MCP-compatible client.
 
